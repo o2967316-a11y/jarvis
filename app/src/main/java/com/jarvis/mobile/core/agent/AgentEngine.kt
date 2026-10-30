@@ -212,11 +212,21 @@ object AgentEngine {
 
     /** CAS the single task slot; the loser coroutine is cancelled, never double-run. */
     private fun launchTask(block: suspend () -> Unit): Boolean {
-        val j = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch { block() }
-        return if (job.compareAndSet(null, j)) true else {
-            j.cancel()
-            false
+    val current = job.get()
+    if (current != null && current.isActive) return false
+
+    val j = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch(
+        start = kotlinx.coroutines.CoroutineStart.LAZY
+    ) {
+        try {
+            block()
+        } finally {
+            job.compareAndSet(coroutineContext[kotlinx.coroutines.Job], null)
         }
+    }
+    job.set(j)
+    j.start()
+    return true
     }
 
     /**
